@@ -5,18 +5,18 @@ cmake_minimum_required(VERSION 3.5)
 
 file(MAKE_DIRECTORY
   "/Users/ahhyun/esp/esp-idf/components/bootloader/subproject"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/tmp"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/src/bootloader-stamp"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/src"
-  "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/src/bootloader-stamp"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/tmp"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/src/bootloader-stamp"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/src"
+  "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/src/bootloader-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
+    file(MAKE_DIRECTORY "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "/Users/ahhyun/esp/esp-idf/examples/radar/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
 endif()

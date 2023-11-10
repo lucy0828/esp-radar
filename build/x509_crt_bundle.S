@@ -1,4 +1,4 @@
-/* * Data converted from /Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from /Users/ahhyun/esp/esp-idf/examples/radar/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 .section .rodata.embedded

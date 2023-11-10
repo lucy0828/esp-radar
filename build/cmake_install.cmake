@@ -1,4 +1,4 @@
-# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing
+# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/radar
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -39,7 +39,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/esp-idf/cmake_install.cmake")
+  include("/Users/ahhyun/esp/esp-idf/examples/radar/build/esp-idf/cmake_install.cmake")
 
 endif()
 
@@ -51,5 +51,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/Users/ahhyun/esp/esp-idf/examples/radar/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

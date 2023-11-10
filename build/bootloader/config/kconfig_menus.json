@@ -8399,6 +8399,19 @@
                                 "range": null,
                                 "title": "Auto suspend long erase/write operations (READ DOCS FIRST)",
                                 "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": "!APP_BUILD_TYPE_PURE_RAM_APP",
+                                "help": "This config is used for setting Tsus parameter. Tsus means CS# high to next command after\nsuspend. You can refer to the chapter of AC CHARACTERISTICS of flash datasheet.",
+                                "id": "SPI_FLASH_SUSPEND_TSUS_VAL_US",
+                                "name": "SPI_FLASH_SUSPEND_TSUS_VAL_US",
+                                "range": [
+                                    20,
+                                    100
+                                ],
+                                "title": "SPI flash tSUS value (refer to chapter AC CHARACTERISTICS)",
+                                "type": "int"
                             }
                         ],
                         "depends_on": "!APP_BUILD_TYPE_PURE_RAM_APP",

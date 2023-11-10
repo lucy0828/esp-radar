@@ -1,4 +1,4 @@
-# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/components/xensiv-radar-presence
+# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/radar/components/xensiv-radar-presence
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

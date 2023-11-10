@@ -39,9 +39,9 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
-  include("/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/esp-idf/mbedtls/mbedtls/3rdparty/cmake_install.cmake")
-  include("/Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
+  include("/Users/ahhyun/esp/esp-idf/examples/radar/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
+  include("/Users/ahhyun/esp/esp-idf/examples/radar/build/esp-idf/mbedtls/mbedtls/3rdparty/cmake_install.cmake")
+  include("/Users/ahhyun/esp/esp-idf/examples/radar/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
 
 endif()
 

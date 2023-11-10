@@ -1,4 +1,4 @@
-# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/managed_components/espressif__esp-dsp
+# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/radar/managed_components/espressif__esp-dsp
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

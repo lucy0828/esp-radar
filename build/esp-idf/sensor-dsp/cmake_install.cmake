@@ -1,4 +1,4 @@
-# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/rd_esp32_code-example-presence-sensing/components/sensor-dsp
+# Install script for directory: /Users/ahhyun/esp/esp-idf/examples/radar/components/sensor-dsp
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
