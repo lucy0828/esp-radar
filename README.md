@@ -18,8 +18,14 @@ This code example is ported from official [ModusToolbox™](https://www.infineon
 * `cd examples`
 * Copy this radar folder inside example folder
 * `idf.py build`
-* `idf.py flash`
-* `idf.py monitor`
+* Download ESPTOOL for flashing
+* `pip install esptool`
+* Move to the radar example folder and flash the bin file
+* `esptool.py erase_flash`
+* `esptool.py --baud 921600 write_flash 0x0000 ./build/esp-example-radar-presence.bin`
+* Monitor the output
+* `screen [SerialPort] 115200`
+
 
 ## Versioning 
 This code example adopts the following versioning convention:  `a.b.c+esp32-#`, where 
