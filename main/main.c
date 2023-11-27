@@ -1,45 +1,3 @@
-/******************************************************************************
-* File Name:   main.c
-*
-* Description: This is the source code for the <CE Title> Example
-*              for ModusToolbox.
-*
-* Related Document: See README.md
-*
-*
-*******************************************************************************
-* Copyright 2022-2023, Cypress Semiconductor Corporation (an Infineon company) or
-* an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
-*
-* This software, including source code, documentation and related
-* materials ("Software") is owned by Cypress Semiconductor Corporation
-* or one of its affiliates ("Cypress") and is protected by and subject to
-* worldwide patent protection (United States and foreign),
-* United States copyright laws and international treaty provisions.
-* Therefore, you may use this Software only as provided in the license
-* agreement accompanying the software package from which you
-* obtained this Software ("EULA").
-* If no EULA applies, Cypress hereby grants you a personal, non-exclusive,
-* non-transferable license to copy, modify, and compile the Software
-* source code solely for use in connection with Cypress's
-* integrated circuit products.  Any reproduction, modification, translation,
-* compilation, or representation of this Software except as specified
-* above is prohibited without the express written permission of Cypress.
-*
-* Disclaimer: THIS SOFTWARE IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND,
-* EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, NONINFRINGEMENT, IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. Cypress
-* reserves the right to make changes to the Software without notice. Cypress
-* does not assume any liability arising out of the application or use of the
-* Software or any product or circuit described in the Software. Cypress does
-* not authorize its products for use in any products where a malfunction or
-* failure of the Cypress product may reasonably be expected to result in
-* significant property damage, injury or death ("High Risk Product"). By
-* including Cypress's product in a High Risk Product, the manufacturer
-* of such system or application assumes all risk of such use and in doing
-* so agrees to indemnify Cypress against all liability.
-*******************************************************************************/
-
 #include <inttypes.h>
 #include <stdio.h>
 
@@ -63,11 +21,11 @@
 #endif
 
 /* Defaults to dma for spi, uncomment for FIFO which may have more latency */
-//#define USE_FIFO_SPI_TRANSACTION
+#define USE_FIFO_SPI_TRANSACTION
 
 /* Defaults to averaging of samples across chirps, may affect sensitivity depending on use case 
  * Uncomment out to only use the samples in the first chirp */
-//#define USE_FIRST_CHIRP_ONLY
+#define USE_FIRST_CHIRP_ONLY
 
 /*******************************************************************************
 * Macros
@@ -104,10 +62,6 @@ static void timer_callback(TimerHandle_t xTimer);
 static int32_t init_leds(void);
 static int32_t init_sensor(void);
 static void xensiv_bgt60trxx_interrupt_handler(void* args);
-void presence_detection_cb(xensiv_radar_presence_handle_t handle,
-                           const xensiv_radar_presence_event_t* event,
-                           void *data);
-
 
 /*******************************************************************************
 * Global Variables
@@ -127,24 +81,10 @@ static float32_t avg_chirp[NUM_SAMPLES_PER_CHIRP];
 static TaskHandle_t radar_task_handler;
 static TaskHandle_t processing_task_handler;
 static TimerHandle_t timer_handler;
+static int count;
 
-/*******************************************************************************
-* Function Name: app_main
-********************************************************************************
-* Summary:
-* This is the main function for ESP32.
-*     1. Creates a timer
-*     2. Create the radar RTOS task
-*
-* Parameters:
-*  void
-*
-* Return:
-*  void
-*
-*******************************************************************************/
 void app_main(void)
-{    
+{   
     timer_handler = xTimerCreate("timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, timer_callback);    
     if (timer_handler == NULL)
     {
@@ -163,24 +103,6 @@ void app_main(void)
     }    
 }
 
-/*******************************************************************************
-* Function Name: radar_task
-********************************************************************************
-* Summary:
-* This is the radar task.
-*    1. Create the processing RTOS task
-*    2. Initializes the hardware interface to the sensor and LEDs
-*    3. Initializes the radar device
-*    4. In an infinite loop
-*       - Waits for interrupt from radar device indicating availability of data
-*       - Reads the data, converts it to floating point and notifies the processing task
-* Parameters:
-*  void
-*
-* Return:
-*  none
-*
-*******************************************************************************/
 static void radar_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -231,78 +153,29 @@ static void radar_task(void *pvParameters)
         }
         else
         {
-            printf("Error receiving fifo data\n");
+            printf(".");
         }
     }
 }
 
-
-/*******************************************************************************
-* Function Name: processing_task
-********************************************************************************
-* Summary:
-* This is the data processing task.
-*    1. Initializes the presence sensing library and register an event callback
-*    2. It creates a console task to handle parameter configuration for the library
-*    3. In a loop
-*       - receives notification from main task
-*       - do necessary preprocessing on received buffer data
-*       - executes the presence algorithm and provides the result on terminal and LEDs
-*
-* Parameters:
-*  void
-*
-* Return:
-*  None
-*
-*******************************************************************************/
 static void processing_task(void *pvParameters)
 {
-    (void)pvParameters;
-
-    static const xensiv_radar_presence_config_t default_config =
-    {
-        .bandwidth                         = 460E6,
-        .num_samples_per_chirp             = XENSIV_BGT60TRXX_CONF_NUM_SAMPLES_PER_CHIRP,
-        .micro_fft_decimation_enabled      = false,
-        .micro_fft_size                    = 128,
-        .macro_threshold                   = 0.5f,
-        .micro_threshold                   = 12.5f,
-        .min_range_bin                     = 1,
-        .max_range_bin                     = 5,
-        .macro_compare_interval_ms         = 250,
-        .macro_movement_validity_ms        = 1000,
-        .micro_movement_validity_ms        = 4000,
-        .macro_movement_confirmations      = 0,
-        .macro_trigger_range               = 1,
-        .mode                              = XENSIV_RADAR_PRESENCE_MODE_MICRO_IF_MACRO,
-        .macro_fft_bandpass_filter_enabled = false,
-        .micro_movement_compare_idx        = 5
-    };
-
-    xensiv_radar_presence_handle_t handle;
-
-    xensiv_radar_presence_set_malloc_free(pvPortMalloc,
-                                          vPortFree);
-
-    if (xensiv_radar_presence_alloc(&handle, &default_config) != 0)
-    {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }
-
-    xensiv_radar_presence_set_callback(handle, presence_detection_cb, NULL);
-    
-    if (xTaskCreate(console_task, CLI_TASK_NAME, CLI_TASK_STACK_SIZE, handle, CLI_TASK_PRIORITY, NULL) != pdPASS)
-    {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    } 
-
     for(;;)
     {
         /* Wait for frame data available to process */
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        /* Data preprocessing */
+        // /* Print ADC data */
+        // uint16_t *bgt60_buffer_ptr = &bgt60_buffer[0];
+
+        // printf("\n\n12-bit ADC values (16-bit buffer):\n");
+        // for(uint32_t i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
+        //     printf("%u ", *bgt60_buffer_ptr++);  // Print each sample as an unsigned integer
+        //     if ((i + 1) % NUM_SAMPLES_PER_CHIRP == 0) { // Break the line every 128 samples for readability
+        //         printf("\n");
+        //     }
+        // }
+
         uint16_t *bgt60_buffer_ptr = &bgt60_buffer[0];
         float32_t *frame_ptr = &frame[0];  
 
@@ -330,64 +203,21 @@ static void processing_task(void *pvParameters)
         dsps_mulc_f32(avg_chirp, avg_chirp, NUM_SAMPLES_PER_CHIRP, 1.0f / (float32_t) NUM_CHIRPS_PER_FRAME,
                         1, 1);
 
-        xensiv_radar_presence_process_frame(handle, avg_chirp, xTaskGetTickCount() * portTICK_PERIOD_MS);
+        // Print avg_chirp values
+        for (int sample = 0; sample < NUM_SAMPLES_PER_CHIRP; sample++)
+        {
+            printf("avg_chirp[%d] = %f\n", sample, avg_chirp[sample]);
+        }     
 #else
-        xensiv_radar_presence_process_frame(handle, frame, xTaskGetTickCount() * portTICK_PERIOD_MS);
-#endif        
+        for (int sample = 0; sample < NUM_SAMPLES_PER_CHIRP; sample++)
+        {
+            // avg_value += frame[sample];
+            printf("%d %d %f\n", count, sample, frame[sample]);
+        }
+        count++;
+#endif
     }
 }
-
-
-/*******************************************************************************
-* Function Name: presence_detection_cb
-********************************************************************************
-* Summary:
-* This is the callback function o indicate presence/absence events on terminal 
-* and LEDs.
-* Parameters:
-*  void
-*
-* Return:
-*  None
-*
-*******************************************************************************/
-void presence_detection_cb(xensiv_radar_presence_handle_t handle,
-                           const xensiv_radar_presence_event_t* event,
-                           void *data)
-{
-    (void)handle;
-    (void)data;
-
-    switch (event->state)
-    {
-        case XENSIV_RADAR_PRESENCE_STATE_MACRO_PRESENCE:
-            gpio_set_level(PIN_LED_RED, 1);    
-            gpio_set_level(PIN_LED_GREEN, 0);   
-            printf("[INFO] macro presence %" PRIi32 " %" PRIi32 "\n",
-                   event->range_bin,
-                   event->timestamp);
-            break;
-
-        case XENSIV_RADAR_PRESENCE_STATE_MICRO_PRESENCE:
-            gpio_set_level(PIN_LED_RED, 1);    
-            gpio_set_level(PIN_LED_GREEN, 0);   
-            printf("[INFO] micro presence %" PRIi32 " %" PRIi32 "\n",
-                    event->range_bin,
-                    event->timestamp);
-            break;
-
-        case XENSIV_RADAR_PRESENCE_STATE_ABSENCE:
-            gpio_set_level(PIN_LED_RED, 0);    
-            gpio_set_level(PIN_LED_GREEN, 1);   
-            printf("[INFO] absence %" PRIu32 "\n", event->timestamp);
-            break;
-
-        default:
-            printf("[WARN]: Unknown reported state in event handling\n");
-            break;
-    }
-}
-
 
 /*******************************************************************************
 * Function Name: init_sensor
@@ -444,7 +274,6 @@ static int32_t init_sensor(void)
         printf("ERROR: spi_bus_add_device failed\n");
         return -1;
     }
-
 
     /* Enable the LDO. */
     gpio_config_t ldo_cfg = {

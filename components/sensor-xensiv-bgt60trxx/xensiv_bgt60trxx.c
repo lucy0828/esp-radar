@@ -289,6 +289,7 @@ int32_t xensiv_bgt60trxx_set_fifo_limit(const xensiv_bgt60trxx_t* dev, uint32_t 
 int32_t xensiv_bgt60trxx_get_fifo_data(const xensiv_bgt60trxx_t* dev, uint16_t* data,
                                        uint32_t num_samples)
 {
+
     xensiv_bgt60trxx_platform_assert(dev != NULL);
     xensiv_bgt60trxx_platform_assert(data != NULL);
     xensiv_bgt60trxx_platform_assert((num_samples % 2U) == 0U);
