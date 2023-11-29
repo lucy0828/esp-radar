@@ -1,0 +1,158 @@
+menu "Example Configuration"
+
+    choice EXAMPLE_IP_MODE
+        prompt "IP Version"
+        depends on EXAMPLE_SOCKET_IP_INPUT_STRING
+        help
+            Example can use either IPV4 or IPV6.
+
+        config EXAMPLE_IPV4
+            bool "IPV4"
+
+        config EXAMPLE_IPV6
+            bool "IPV6"
+            select EXAMPLE_CONNECT_IPV6
+
+    endchoice
+
+    config EXAMPLE_IPV4_ADDR
+        string "IPV4 Address"
+        default "192.168.0.165"
+        depends on EXAMPLE_IPV4
+        help
+            IPV4 address to which the client example will send data.
+
+    config EXAMPLE_IPV6_ADDR
+        string "IPV6 Address"
+        default "FE80::30AD:E57B:C212:68AD"
+        depends on EXAMPLE_IPV6
+        help
+            IPV6 address to which the client example will send data.
+
+    config EXAMPLE_PORT
+        int "Port"
+        range 0 65535
+        default 3333
+        help
+            The remote port to which the client example will send data.
+
+    choice EXAMPLE_SOCKET_IP_INPUT
+        prompt "Socket example source"
+        default EXAMPLE_SOCKET_IP_INPUT_STRING
+        help
+            Selects the input source of the IP used in the example.
+
+        config EXAMPLE_SOCKET_IP_INPUT_STRING
+            bool "From string"
+
+        config EXAMPLE_SOCKET_IP_INPUT_STDIN
+            bool "From stdin"
+    endchoice
+
+endmenu
+
+menu "Example Connection Configuration"
+
+    config ENV_GPIO_RANGE_MIN
+        int "Minimum GPIO Range"
+        default 0
+        help
+            "Minimum range for GPIO."
+    
+    config ENV_GPIO_RANGE_MAX
+        int "Maximum GPIO Range"
+        default 39
+        help
+            "Maximum range for GPIO."
+    
+    config ENV_GPIO_IN_RANGE_MAX
+        int "Maximum GPIO Input Range"
+        default 39
+        help
+            "Maximum range for GPIO input."
+    
+    config ENV_GPIO_OUT_RANGE_MAX
+        int "Maximum GPIO Output Range"
+        default 33
+        help
+            "Maximum range for GPIO output."
+    
+    config EXAMPLE_CONNECT_WIFI
+        bool "Connect WiFi"
+        default y
+        help
+            "Enable WiFi connection."
+    
+    config EXAMPLE_PROVIDE_WIFI_CONSOLE_CMD
+        bool "Provide WiFi Console Command"
+        default y
+        help
+            "Provide a console command for WiFi."
+    
+    config EXAMPLE_WIFI_SSID
+        string "WiFi SSID"
+        default "camsys"
+        help
+            "Set the SSID of the WiFi network to connect to."
+    
+    config EXAMPLE_WIFI_PASSWORD
+        string "WiFi Password"
+        default "Moore103"
+        help
+            "Set the password for the WiFi network."
+    
+    config EXAMPLE_WIFI_CONN_MAX_RETRY
+        int "WiFi Connection Maximum Retry"
+        default 6
+        help
+            "Maximum number of retries for WiFi connection."
+    
+    config EXAMPLE_WIFI_SCAN_METHOD_ALL_CHANNEL
+        bool "WiFi Scan All Channels"
+        default y
+        help
+            "Enable scanning all WiFi channels."
+    
+    menu "WiFi Scan Threshold"
+    
+    config EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD
+        int "WiFi Scan RSSI Threshold"
+        default -127
+        range -127 0
+        help
+            "RSSI threshold for WiFi scanning."
+    
+    config EXAMPLE_WIFI_AUTH_OPEN
+        bool "WiFi Open Authentication"
+        default y
+        help
+            "Enable open authentication for WiFi."
+    
+    endmenu
+    
+    config EXAMPLE_WIFI_CONNECT_AP_BY_SIGNAL
+        bool "Connect to AP by Signal"
+        default y
+        help
+            "Enable connection to AP based on signal strength."
+    
+    config EXAMPLE_CONNECT_IPV4
+        bool "Connect with IPv4"
+        default y
+        help
+            "Enable IPv4 connection."
+    
+    config EXAMPLE_CONNECT_IPV6
+        bool "Connect with IPv6"
+        default y
+        help
+            "Enable IPv6 connection."
+    
+    config EXAMPLE_CONNECT_IPV6_PREF_LOCAL_LINK
+        bool "IPv6 Local Link Preference"
+        default y
+        help
+            "Prefer IPv6 local link for connection."
+    
+    endmenu
+    
