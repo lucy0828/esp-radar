@@ -12,6 +12,7 @@
 
 #include "esp_system.h"
 #include "esp_event.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
@@ -20,7 +21,6 @@
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
 
-#include "cli_task.h"
 #include "resource_map.h"
 #include "xensiv_bgt60trxx_esp.h"
 #include "xensiv_radar_presence.h"
@@ -43,16 +43,15 @@
 #define NUM_SAMPLES_PER_CHIRP               XENSIV_BGT60TRXX_CONF_NUM_SAMPLES_PER_CHIRP
 
 /* RTOS tasks */
+#define UDP_TASK_NAME                       "udp_task"
+#define UDP_TASK_STACK_SIZE                 (configMINIMAL_STACK_SIZE * 4)
+#define UDP_TASK_PRIORITY                   (configMAX_PRIORITIES - 1)
 #define RADAR_TASK_NAME                     "radar_task"
 #define RADAR_TASK_STACK_SIZE               (configMINIMAL_STACK_SIZE * 4)
-#define RADAR_TASK_PRIORITY                 (configMAX_PRIORITIES - 1)
+#define RADAR_TASK_PRIORITY                 (configMAX_PRIORITIES - 2)
 #define PROCESSING_TASK_NAME                "processing_task"
 #define PROCESSING_TASK_STACK_SIZE          (configMINIMAL_STACK_SIZE * 4)
 #define PROCESSING_TASK_PRIORITY            (configMAX_PRIORITIES - 2)
-
-#define CLI_TASK_NAME                       "cli_task"
-#define CLI_TASK_STACK_SIZE                 (configMINIMAL_STACK_SIZE * 10)
-#define CLI_TASK_PRIORITY                   (tskIDLE_PRIORITY)
 
 /*******************************************************************************
 * Function Prototypes
@@ -60,7 +59,6 @@
 static void udp_client_task(void *pvParameters);
 static void radar_task(void *pvParameters);
 static void processing_task(void *pvParameters);
-static void timer_callback(TimerHandle_t xTimer);
 
 static int32_t init_leds(void);
 static int32_t init_sensor(void);
@@ -70,20 +68,23 @@ static void xensiv_bgt60trxx_interrupt_handler(void* args);
 * Global Variables
 ********************************************************************************/
 typedef struct {
-    int count;
-    float values[NUM_SAMPLES_PER_CHIRP];
+    int64_t timestamp;
+    uint16_t values[NUM_SAMPLES_PER_CHIRP];
 } radar_data_t;
 
 static const char *TAG = "radar_data";
 static QueueHandle_t radar_data_queue;
+
+static radar_data_t shared_radar_data;
+static SemaphoreHandle_t data_semaphore;
+static volatile bool data_ready = false;
+
 static spi_device_handle_t spi_obj;
 static xensiv_bgt60trxx_esp_t bgt60_obj;
-static uint16_t bgt60_buffer[NUM_SAMPLES_PER_FRAME];
-static float32_t frame[NUM_SAMPLES_PER_FRAME];
+static DMA_ATTR uint16_t bgt60_buffer[NUM_SAMPLES_PER_FRAME];
+
 static TaskHandle_t radar_task_handler;
 static TaskHandle_t processing_task_handler;
-static TimerHandle_t timer_handler;
-static int count;
 
 void app_main(void)
 {   
@@ -91,22 +92,12 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_connect());
-    
-    // Adjust size as needed
-    radar_data_queue = xQueueCreate(10, sizeof(radar_data_t)); 
+
+    // Create the queue with the determined size
+    radar_data_queue = xQueueCreate(200, sizeof(radar_data_t));
+    data_semaphore = xSemaphoreCreateMutex();
  
-    xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
-
-    timer_handler = xTimerCreate("timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, timer_callback);    
-    if (timer_handler == NULL)
-    {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }
-
-    if (xTimerStart(timer_handler, 0) != pdPASS)
-    {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }
+    xTaskCreatePinnedToCore(udp_client_task, UDP_TASK_NAME, UDP_TASK_STACK_SIZE, NULL, UDP_TASK_PRIORITY, NULL, 0);
 
     /* Create the radar task */    
     if (xTaskCreatePinnedToCore(radar_task, RADAR_TASK_NAME, RADAR_TASK_STACK_SIZE, NULL, RADAR_TASK_PRIORITY, &radar_task_handler, 0) != pdPASS)
@@ -195,7 +186,7 @@ static void udp_client_task(void *pvParameters) {
 
 static void radar_task(void *pvParameters)
 {
-    (void)pvParameters;
+    radar_data_t local_data;
 
     /* Create the processing task */
     if (xTaskCreatePinnedToCore(processing_task, PROCESSING_TASK_NAME, PROCESSING_TASK_STACK_SIZE, NULL, PROCESSING_TASK_PRIORITY, &processing_task_handler, 1) != pdPASS)
@@ -238,8 +229,18 @@ static void radar_task(void *pvParameters)
                                            bgt60_buffer,
                                            NUM_SAMPLES_PER_FRAME) == XENSIV_BGT60TRXX_STATUS_OK)
         {
-            /* Tell processing task to take over */
+            // Populate radar_data_t structure
+            local_data.timestamp = esp_timer_get_time(); // Get current timestamp in microseconds
+            memcpy(local_data.values, bgt60_buffer, sizeof(bgt60_buffer));
+
+            // Lock the semaphore, update the shared data, and then unlock
+            xSemaphoreTake(data_semaphore, portMAX_DELAY);
+            shared_radar_data = local_data;
+            data_ready = true;
+            xSemaphoreGive(data_semaphore);
+
             xTaskNotifyGive(processing_task_handler);
+
         }
         else
         {
@@ -250,50 +251,29 @@ static void radar_task(void *pvParameters)
 
 static void processing_task(void *pvParameters)
 {
+    radar_data_t local_data;
+
     for(;;)
     {
         /* Wait for frame data available to process */
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // /* Print ADC data */
-        // uint16_t *bgt60_buffer_ptr = &bgt60_buffer[0];
-
-        // printf("\n\n12-bit ADC values (16-bit buffer):\n");
-        // for(uint32_t i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
-        //     printf("%u ", *bgt60_buffer_ptr++);  // Print each sample as an unsigned integer
-        //     if ((i + 1) % NUM_SAMPLES_PER_CHIRP == 0) { // Break the line every 128 samples for readability
-        //         printf("\n");
-        //     }
-        // }
-
-        uint16_t *bgt60_buffer_ptr = &bgt60_buffer[0];
-        float32_t *frame_ptr = &frame[0];  
-
-        for (int32_t sample = 0; sample < NUM_SAMPLES_PER_FRAME; ++sample)
+        if (data_ready)
         {
-            *frame_ptr++ = ((float32_t)(*bgt60_buffer_ptr++) / 4096.0F);
+            // Lock the semaphore, copy the data locally, and then unlock
+            xSemaphoreTake(data_semaphore, portMAX_DELAY);
+            local_data = shared_radar_data;
+            data_ready = false; // Reset the flag
+            xSemaphoreGive(data_semaphore);
+
+            xQueueSend(radar_data_queue, &local_data, portMAX_DELAY);
         }
-
-        radar_data_t data;
-        data.count = count; 
-
-        for (int sample = 0; sample < NUM_SAMPLES_PER_CHIRP; sample++)
-        {
-            data.values[sample] = frame[sample];
-        }
-
-        xQueueSend(radar_data_queue, &data, portMAX_DELAY);
-        count++;
     }
 }
 
 static int32_t init_sensor(void)
 {
-#ifdef USE_FIFO_SPI_TRANSACTION
-    bool use_dma = false;
-#else
     bool use_dma = true;
-#endif
 
     /* Initialize the SPI interface to BGT60. */
     spi_bus_config_t bus_cfg = {
@@ -407,10 +387,4 @@ static int32_t init_leds(void)
     //gpio_set_level(PIN_LED_BLUE, 0); Blue pin is input only
 
     return 0;
-}
-
-
-static void timer_callback(TimerHandle_t xTimer)
-{
-    (void)xTimer;
 }

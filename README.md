@@ -18,14 +18,19 @@ This code example is ported from official [ModusToolbox™](https://www.infineon
 * `cd examples`
 * Copy this radar folder inside example folder
 * `idf.py build`
-* Download ESPTOOL for flashing
-* `pip install esptool`
-* Move to the radar example folder and flash the bin file
-* `esptool.py erase_flash`
-* `esptool.py --baud 921600 write_flash 0x0000 ./build/esp-example-radar.bin`
+* Flash the files
+* `idf.py flash`
 * Monitor the output
-* `screen [SerialPort] 115200`
+* `idf.py monitor`
+* To modify the WiFi, go to menuconfig and change the configuration
+* `idf.py menuconfig`
+* To change the radar settings, go to ./main/radar settings folder, find the target settings, copy and paste the target setting in the ./main/radar_settings_tr13.h
 
+## Running server to collect radar data over UDP
+* Go to scripts folder and run the udp server
+* `python run_tcp_server.py --port=3333`
+* Go to main folder and run `idf.py monitor` to monitor Esp32
+* Your radar data will be saved as csv file inside the scripts folder
 
 ## Versioning 
 This code example adopts the following versioning convention:  `a.b.c+esp32-#`, where 

@@ -49,17 +49,17 @@ class UdpServer:
 
         while not self.shutdown.is_set():
             try:
-                data, addr = self.socket.recvfrom(1024)
+                buffer_size = 8 + 2 * NUM_SAMPLES_PER_CHIRP
+                data, addr = self.socket.recvfrom(buffer_size)
                 if not data:
                     return
 
-                format_string = '=i' + str(NUM_SAMPLES_PER_CHIRP) + 'f'
+                format_string = '=q' + str(NUM_SAMPLES_PER_CHIRP) + 'H'  # 'q' for 64-bit long long
                 unpacked_data = struct.unpack(format_string, data)
-                count = unpacked_data[0]
+                timestamp = unpacked_data[0]
                 samples = unpacked_data[1:]
 
-                # Write data to CSV file
-                csv_writer.writerow([count] + list(samples))
+                csv_writer.writerow([timestamp] + list(samples))
 
                 reply = 'OK'
                 self.socket.sendto(reply.encode(), addr)
