@@ -1,4 +1,4 @@
-# Radar Human Presence Detection on Esp32
+# XENSIV™ 60-GHz Radar on Esp32
 
 ## Overview
 
