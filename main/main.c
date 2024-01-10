@@ -25,7 +25,7 @@
 #include "xensiv_bgt60trxx_esp.h"
 #include "xensiv_radar_presence.h"
 
-#define HOST_IP_ADDR CONFIG_EXAMPLE_IPV4_ADDR
+#define HOST_IP_ADDR "255.255.255.255"
 #define PORT CONFIG_EXAMPLE_PORT
 
 #define XENSIV_BGT60TRXX_CONF_IMPL
@@ -45,21 +45,20 @@
 /* RTOS tasks */
 #define UDP_TASK_NAME                       "udp_task"
 #define UDP_TASK_STACK_SIZE                 (configMINIMAL_STACK_SIZE * 4)
-#define UDP_TASK_PRIORITY                   (configMAX_PRIORITIES - 1)
+#define UDP_TASK_PRIORITY                   (1)
 #define RADAR_TASK_NAME                     "radar_task"
 #define RADAR_TASK_STACK_SIZE               (configMINIMAL_STACK_SIZE * 4)
-#define RADAR_TASK_PRIORITY                 (configMAX_PRIORITIES - 2)
-#define PROCESSING_TASK_NAME                "processing_task"
-#define PROCESSING_TASK_STACK_SIZE          (configMINIMAL_STACK_SIZE * 4)
-#define PROCESSING_TASK_PRIORITY            (configMAX_PRIORITIES - 2)
+#define RADAR_TASK_PRIORITY                 (3)
+#define MAX_RETRY_COUNT                     (3)
+#define BATCH_SIZE                          (3)
+#define TASK_QUEUE_LENGTH                   (3u)
+
 
 /*******************************************************************************
 * Function Prototypes
 ********************************************************************************/
 static void udp_client_task(void *pvParameters);
 static void radar_task(void *pvParameters);
-static void processing_task(void *pvParameters);
-
 static int32_t init_leds(void);
 static int32_t init_sensor(void);
 static void xensiv_bgt60trxx_interrupt_handler(void* args);
@@ -75,7 +74,6 @@ typedef struct {
 static const char *TAG = "radar_data";
 static QueueHandle_t radar_data_queue;
 
-static radar_data_t shared_radar_data;
 static SemaphoreHandle_t data_semaphore;
 static volatile bool data_ready = false;
 
@@ -84,7 +82,6 @@ static xensiv_bgt60trxx_esp_t bgt60_obj;
 static DMA_ATTR uint16_t bgt60_buffer[NUM_SAMPLES_PER_FRAME];
 
 static TaskHandle_t radar_task_handler;
-static TaskHandle_t processing_task_handler;
 
 void app_main(void)
 {   
@@ -94,7 +91,7 @@ void app_main(void)
     ESP_ERROR_CHECK(example_connect());
 
     // Create the queue with the determined size
-    radar_data_queue = xQueueCreate(200, sizeof(radar_data_t));
+    radar_data_queue = xQueueCreate(TASK_QUEUE_LENGTH, sizeof(radar_data_t));
     data_semaphore = xSemaphoreCreateMutex();
  
     xTaskCreatePinnedToCore(udp_client_task, UDP_TASK_NAME, UDP_TASK_STACK_SIZE, NULL, UDP_TASK_PRIORITY, NULL, 0);
@@ -106,8 +103,19 @@ void app_main(void)
     }    
 }
 
+// Timer callback function
+void timerCallback(TimerHandle_t xTimer) {
+    unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
+    printf("Messages waiting in the queue: %u\n", messages_waiting);
+    
+    uint32_t free_heap_1 = xPortGetFreeHeapSize();
+    printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
+    
+    uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
+    printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
+}
+
 static void udp_client_task(void *pvParameters) {
-    char rx_buffer[128];
     int addr_family = 0;
     int ip_protocol = 0;
     struct sockaddr_storage dest_addr = { 0 }; // Generalize for IPv4/IPv6
@@ -141,38 +149,39 @@ static void udp_client_task(void *pvParameters) {
 
         // Set timeout for receiving
         struct timeval timeout;
-        timeout.tv_sec = 10;
+        timeout.tv_sec = portMAX_DELAY;
         timeout.tv_usec = 0;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
         ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
 
-        while (1) {
-            radar_data_t data;
-            if (xQueueReceive(radar_data_queue, &data, portMAX_DELAY)) {
-                int err = sendto(sock, &data, sizeof(data), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-                if (err < 0) {
-                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                    break; // Consider delay or retry logic here
+        // Receive multiple data points into a batch
+        while(1){
+            radar_data_t batch[BATCH_SIZE];
+            int batch_index = 0;
+            while (batch_index < BATCH_SIZE) {
+                if (xQueueReceive(radar_data_queue, &batch[batch_index], portMAX_DELAY)) {
+                    batch_index++;
                 }
-                ESP_LOGI(TAG, "Data sent");
             }
 
-            struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
-            socklen_t socklen = sizeof(source_addr);
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
+            int err = sendto(sock, &batch, sizeof(radar_data_t) * BATCH_SIZE, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            
+            if (err < 0) {
+                        ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                        perror("sendto");
+                        unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
+                        printf("Messages waiting in the queue: %u\n", messages_waiting);
+                        
+                        uint32_t free_heap_1 = xPortGetFreeHeapSize();
+                        printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
+                        
+                        uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
+                        printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
+                        break; // Consider delay or retry logic here
+                    }
+            vTaskDelay(pdMS_TO_TICKS(1));
 
-            // Error occurred during receiving
-            if (len < 0) {
-                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-                // Consider whether to break or just log the error and continue
-            }
-            // Data received
-            else {
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
-                ESP_LOGI(TAG, "Received %d bytes: %s", len, rx_buffer);
-                // Handle received data
-            }
         }
 
         if (sock != -1) {
@@ -187,12 +196,6 @@ static void udp_client_task(void *pvParameters) {
 static void radar_task(void *pvParameters)
 {
     radar_data_t local_data;
-
-    /* Create the processing task */
-    if (xTaskCreatePinnedToCore(processing_task, PROCESSING_TASK_NAME, PROCESSING_TASK_STACK_SIZE, NULL, PROCESSING_TASK_PRIORITY, &processing_task_handler, 1) != pdPASS)
-    {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }
 
     if (init_sensor() != 0)
     {
@@ -232,41 +235,11 @@ static void radar_task(void *pvParameters)
             // Populate radar_data_t structure
             local_data.timestamp = esp_timer_get_time(); // Get current timestamp in microseconds
             memcpy(local_data.values, bgt60_buffer, sizeof(bgt60_buffer));
-
-            // Lock the semaphore, update the shared data, and then unlock
-            xSemaphoreTake(data_semaphore, portMAX_DELAY);
-            shared_radar_data = local_data;
-            data_ready = true;
-            xSemaphoreGive(data_semaphore);
-
-            xTaskNotifyGive(processing_task_handler);
-
+            xQueueSendToBack(radar_data_queue, &local_data,0);
         }
         else
         {
             printf(".");
-        }
-    }
-}
-
-static void processing_task(void *pvParameters)
-{
-    radar_data_t local_data;
-
-    for(;;)
-    {
-        /* Wait for frame data available to process */
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        if (data_ready)
-        {
-            // Lock the semaphore, copy the data locally, and then unlock
-            xSemaphoreTake(data_semaphore, portMAX_DELAY);
-            local_data = shared_radar_data;
-            data_ready = false; // Reset the flag
-            xSemaphoreGive(data_semaphore);
-
-            xQueueSend(radar_data_queue, &local_data, portMAX_DELAY);
         }
     }
 }
