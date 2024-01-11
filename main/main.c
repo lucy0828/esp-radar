@@ -49,8 +49,7 @@
 #define RADAR_TASK_NAME                     "radar_task"
 #define RADAR_TASK_STACK_SIZE               (configMINIMAL_STACK_SIZE * 4)
 #define RADAR_TASK_PRIORITY                 (3)
-#define MAX_RETRY_COUNT                     (3)
-#define BATCH_SIZE                          (3)
+#define BATCH_SIZE                          (15)
 #define TASK_QUEUE_LENGTH                   (3u)
 
 
@@ -59,6 +58,7 @@
 ********************************************************************************/
 static void udp_client_task(void *pvParameters);
 static void radar_task(void *pvParameters);
+void timer_callback(TimerHandle_t xTimer);
 static int32_t init_leds(void);
 static int32_t init_sensor(void);
 static void xensiv_bgt60trxx_interrupt_handler(void* args);
@@ -66,137 +66,126 @@ static void xensiv_bgt60trxx_interrupt_handler(void* args);
 /*******************************************************************************
 * Global Variables
 ********************************************************************************/
-typedef struct {
+typedef struct 
+{
     int64_t timestamp;
     uint16_t values[NUM_SAMPLES_PER_CHIRP];
 } radar_data_t;
 
 static const char *TAG = "radar_data";
 static QueueHandle_t radar_data_queue;
-
-static SemaphoreHandle_t data_semaphore;
-static volatile bool data_ready = false;
+static TaskHandle_t radar_task_handler;
 
 static spi_device_handle_t spi_obj;
 static xensiv_bgt60trxx_esp_t bgt60_obj;
 static DMA_ATTR uint16_t bgt60_buffer[NUM_SAMPLES_PER_FRAME];
 
-static TaskHandle_t radar_task_handler;
-
-void app_main(void)
+void app_main (void)
 {   
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_connect());
 
-    // Create the queue with the determined size
-    radar_data_queue = xQueueCreate(TASK_QUEUE_LENGTH, sizeof(radar_data_t));
-    data_semaphore = xSemaphoreCreateMutex();
- 
-    xTaskCreatePinnedToCore(udp_client_task, UDP_TASK_NAME, UDP_TASK_STACK_SIZE, NULL, UDP_TASK_PRIORITY, NULL, 0);
+    /* \x1b[2J\x1b[;H - ANSI ESC sequence to clear screen. */
+    printf("\x1b[2J\x1b[;H");
+    printf("===============================================================\n");
+    printf(" - UDP Server with Radar data\n");
+    printf("===============================================================\n\n");
 
-    /* Create the radar task */    
-    if (xTaskCreatePinnedToCore(radar_task, RADAR_TASK_NAME, RADAR_TASK_STACK_SIZE, NULL, RADAR_TASK_PRIORITY, &radar_task_handler, 0) != pdPASS)
+    if (xTaskCreatePinnedToCore(udp_client_task, UDP_TASK_NAME, UDP_TASK_STACK_SIZE, NULL, UDP_TASK_PRIORITY, NULL, 0) != pdPASS)
     {
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }    
+        printf("Failed to create UDP server task!\n");
+    }
+    
+    // vTaskStartScheduler();
 }
 
-// Timer callback function
-void timerCallback(TimerHandle_t xTimer) {
-    unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
-    printf("Messages waiting in the queue: %u\n", messages_waiting);
-    
-    uint32_t free_heap_1 = xPortGetFreeHeapSize();
-    printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
-    
-    uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
-    printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
-}
-
-static void udp_client_task(void *pvParameters) {
+static void udp_client_task(void *pvParameters) 
+{
     int addr_family = 0;
     int ip_protocol = 0;
     struct sockaddr_storage dest_addr = { 0 }; // Generalize for IPv4/IPv6
 
     // Determine address family and protocol based on the configuration
-#if defined(CONFIG_EXAMPLE_IPV4)
-    struct sockaddr_in *dest_addr_ipv4 = (struct sockaddr_in *)&dest_addr;
-    dest_addr_ipv4->sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-    dest_addr_ipv4->sin_family = AF_INET;
-    dest_addr_ipv4->sin_port = htons(PORT);
-    addr_family = AF_INET;
-    ip_protocol = IPPROTO_IP;
-#elif defined(CONFIG_EXAMPLE_IPV6)
-    struct sockaddr_in6 *dest_addr_ipv6 = (struct sockaddr_in6 *)&dest_addr;
-    inet6_aton(HOST_IP_ADDR, &dest_addr_ipv6->sin6_addr);
-    dest_addr_ipv6->sin6_family = AF_INET6;
-    dest_addr_ipv6->sin6_port = htons(PORT);
-    dest_addr_ipv6->sin6_scope_id = esp_netif_get_netif_impl_index(EXAMPLE_INTERFACE);
-    addr_family = AF_INET6;
-    ip_protocol = IPPROTO_IPV6;
-#elif defined(CONFIG_EXAMPLE_SOCKET_IP_INPUT_STDIN)
-    ESP_ERROR_CHECK(get_addr_from_stdin(PORT, SOCK_DGRAM, &ip_protocol, &addr_family, &dest_addr));
-#endif
+    #if defined(CONFIG_EXAMPLE_IPV4)
+        struct sockaddr_in *dest_addr_ipv4 = (struct sockaddr_in *)&dest_addr;
+        dest_addr_ipv4->sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+        dest_addr_ipv4->sin_family = AF_INET;
+        dest_addr_ipv4->sin_port = htons(PORT);
+        addr_family = AF_INET;
+        ip_protocol = IPPROTO_IP;
+    #elif defined(CONFIG_EXAMPLE_IPV6)
+        struct sockaddr_in6 *dest_addr_ipv6 = (struct sockaddr_in6 *)&dest_addr;
+        inet6_aton(HOST_IP_ADDR, &dest_addr_ipv6->sin6_addr);
+        dest_addr_ipv6->sin6_family = AF_INET6;
+        dest_addr_ipv6->sin6_port = htons(PORT);
+        dest_addr_ipv6->sin6_scope_id = esp_netif_get_netif_impl_index(EXAMPLE_INTERFACE);
+        addr_family = AF_INET6;
+        ip_protocol = IPPROTO_IPV6;
+    #elif defined(CONFIG_EXAMPLE_SOCKET_IP_INPUT_STDIN)
+        ESP_ERROR_CHECK(get_addr_from_stdin(PORT, SOCK_DGRAM, &ip_protocol, &addr_family, &dest_addr));
+    #endif
 
-    while (1) {
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0) {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+    radar_data_queue = xQueueCreate(TASK_QUEUE_LENGTH, sizeof(radar_data_t));
+
+    if (xTaskCreatePinnedToCore(radar_task, RADAR_TASK_NAME, RADAR_TASK_STACK_SIZE, NULL, RADAR_TASK_PRIORITY, &radar_task_handler, 1) != pdPASS)
+    {
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }   
+
+    int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+    if (sock < 0) 
+    {
+        ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+    }
+
+    int buffer_size = 100000; // Example size, adjust as needed
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
+
+
+    ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
+ 
+    while (1)
+    {
+        radar_data_t batch[BATCH_SIZE];
+        int batch_index = 0;
+        while (batch_index < BATCH_SIZE) {
+            if (xQueueReceive(radar_data_queue, &batch[batch_index], portMAX_DELAY)) {
+                batch_index++;
+            }
+        }
+
+        int err = sendto(sock, &batch, sizeof(radar_data_t) * BATCH_SIZE, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        
+        if (err < 0) 
+        {
+            ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+            perror("sendto");
+            unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
+            printf("Messages waiting in the queue: %u\n", messages_waiting);
+            
+            uint32_t free_heap_1 = xPortGetFreeHeapSize();
+            printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
+            
+            uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
+            printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
             break; // Consider delay or retry logic here
         }
+        // vTaskDelay(pdMS_TO_TICKS(1));
+    }
 
-        // Set timeout for receiving
-        struct timeval timeout;
-        timeout.tv_sec = portMAX_DELAY;
-        timeout.tv_usec = 0;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-
-        ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
-
-        // Receive multiple data points into a batch
-        while(1){
-            radar_data_t batch[BATCH_SIZE];
-            int batch_index = 0;
-            while (batch_index < BATCH_SIZE) {
-                if (xQueueReceive(radar_data_queue, &batch[batch_index], portMAX_DELAY)) {
-                    batch_index++;
-                }
-            }
-
-            int err = sendto(sock, &batch, sizeof(radar_data_t) * BATCH_SIZE, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-            
-            if (err < 0) {
-                        ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                        perror("sendto");
-                        unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
-                        printf("Messages waiting in the queue: %u\n", messages_waiting);
-                        
-                        uint32_t free_heap_1 = xPortGetFreeHeapSize();
-                        printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
-                        
-                        uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
-                        printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
-                        break; // Consider delay or retry logic here
-                    }
-            vTaskDelay(pdMS_TO_TICKS(1));
-
-        }
-
-        if (sock != -1) {
-            ESP_LOGE(TAG, "Shutting down socket...");
-            shutdown(sock, 0);
-            close(sock);
-        }
+    if (sock != -1) 
+    {
+        ESP_LOGE(TAG, "Shutting down socket...");
+        shutdown(sock, 0);
+        close(sock);
     }
     vTaskDelete(NULL);
 }
 
 static void radar_task(void *pvParameters)
 {
-    radar_data_t local_data;
-
     if (init_sensor() != 0)
     {
         ESP_ERROR_CHECK(ESP_FAIL);
@@ -207,33 +196,21 @@ static void radar_task(void *pvParameters)
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
-    /* \x1b[2J\x1b[;H - ANSI ESC sequence for clear screen */
-    printf("\x1b[2J\x1b[;H");
-
-    printf("****************** "
-           "XENSIV BGT60TR13C radar solution demo "
-           "****************** \r\n\n"
-           "Human presence detection using XENSIV BGT60TR13C radar and ESP32\r\n"
-           );
-
-    printf("Press ENTER to enter setup mode, press ESC to quit setup mode \r\n");
-
     if (xensiv_bgt60trxx_start_frame(&bgt60_obj.dev, true) != XENSIV_BGT60TRXX_STATUS_OK)
     {
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
+    radar_data_t local_data;
     for(;;)
     {
-        /* Wait for the GPIO interrupt to indicate that another slice is available */
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
+        
         if (xensiv_bgt60trxx_get_fifo_data(&bgt60_obj.dev, 
                                            bgt60_buffer,
                                            NUM_SAMPLES_PER_FRAME) == XENSIV_BGT60TRXX_STATUS_OK)
         {
-            // Populate radar_data_t structure
-            local_data.timestamp = esp_timer_get_time(); // Get current timestamp in microseconds
+            local_data.timestamp = esp_timer_get_time(); 
             memcpy(local_data.values, bgt60_buffer, sizeof(bgt60_buffer));
             xQueueSendToBack(radar_data_queue, &local_data,0);
         }
@@ -242,6 +219,18 @@ static void radar_task(void *pvParameters)
             printf(".");
         }
     }
+}
+
+void timer_callback(TimerHandle_t xTimer) 
+{
+    unsigned int messages_waiting = uxQueueMessagesWaiting(radar_data_queue);
+    printf("Messages waiting in the queue: %u\n", messages_waiting);
+    
+    uint32_t free_heap_1 = xPortGetFreeHeapSize();
+    printf("Free RTOS Heap Size: %" PRId32 " bytes\n", free_heap_1);
+    
+    uint32_t free_heap_2 = esp_get_minimum_free_heap_size();
+    printf("Free Heap Size: %" PRId32 " bytes\n", free_heap_2);
 }
 
 static int32_t init_sensor(void)
